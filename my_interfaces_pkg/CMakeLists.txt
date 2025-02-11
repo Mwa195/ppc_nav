@@ -29,6 +29,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 "srv/StartMission.srv"
 "srv/CreatePlan.srv" 
 "action/CountUntil.action"
+"action/Navigate.action"
   DEPENDENCIES action_msgs geometry_msgs nav_msgs
 )
 

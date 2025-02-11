@@ -7,6 +7,8 @@
   <maintainer email="mwa@todo.todo">mwa</maintainer>
   <license>TODO: License declaration</license>
 
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>rclpy</depend>
   <depend>my_interfaces_pkg</depend>
 

@@ -1,0 +1,10 @@
+# Goal
+nav_msgs/Path path
+
+---
+# Feedback
+int16 remaining_distance
+
+---
+# Result
+bool success
