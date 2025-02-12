@@ -3,10 +3,13 @@
 import rclpy
 import rclpy.publisher
 from rclpy.node import Node
+from rclpy.action import ActionClient
+from rclpy.action.client import ClientGoalHandle
 from std_msgs.msg import String
 from nav_msgs.msg import Path
 from my_interfaces_pkg.msg import StartMissionMsg
 from my_interfaces_pkg.srv import CreatePlan
+from my_interfaces_pkg.action import Navigate
 
 class behaviourNode(Node):
     def __init__(self):
@@ -19,10 +22,14 @@ class behaviourNode(Node):
         self.client = self.create_client(CreatePlan, "/create_plan")
         # Create another Publisher to publish the plan
         self.pubPlan = self.create_publisher(Path, "/global_plan", 1)
+        # Create an Action Client to trigger navigation
+        self.actionClient = ActionClient(self, Navigate, "/navigate")
 
         # Initial state
         self.state = String()
         self.state.data = "idle"
+        self.goal_handle = None
+        self.get_logger().info("Behaviour Node Ready")
 
     # Execute whenever a new mission arrives
     def missionCallbackFn(self, mission:StartMissionMsg):
@@ -34,6 +41,9 @@ class behaviourNode(Node):
         if self.name == "Stop":
             self.state.data = "idle"
             self.pub.publish(self.state) # Change state to idle and publish
+            if self.goal_handle is not None:
+                self.goal_handle.cancel_goal_async()
+                self.get_logger().info("Navigation action canceled")
         elif self.name == "GoTo":
             self.gotoFn()
 
@@ -49,6 +59,7 @@ class behaviourNode(Node):
         # Request Plan
         self.requestPlan()
 
+    # Plan Service
     def requestPlan(self):
         requestPlanMsg = CreatePlan.Request()
         requestPlanMsg.target_pose = self.target_pose
@@ -61,7 +72,7 @@ class behaviourNode(Node):
             try:
                 self.response = self.future.result()  # Get Response
                 if self.response is not None:
-                    self.get_logger().info(f"Received path with {self.response.path} poses")
+                    self.get_logger().info(f"Received path with {len(self.response.path.poses)} poses")
                     self.get_logger().info("Publishing Path to global_plan")
                     self.pubPlan.publish(self.response.path)  # Publish the plan
                     self.state.data = "navigate"
@@ -72,7 +83,28 @@ class behaviourNode(Node):
                 self.get_logger().error(f"Service call failed: {str(e)}")
             finally:
                 self.timer.cancel()  # Cancel the timer after processing the result
-        
+                self.send_goal()
+
+
+    # Navigation Action
+    def send_goal(self):
+        goal = Navigate.Goal()
+        goal.path = self.response.path
+        self.get_logger().info("Triggering Navigation Action")
+        self.actionClient.send_goal_async(goal, feedback_callback= self.feedbackCallbackFn).add_done_callback(self.goalResponseFn)
+
+    def feedbackCallbackFn(self, feedbackMsg):
+        feedback = feedbackMsg.feedback.remaining_distance
+        self.get_logger().warn(f"Feedback: {feedback}")
+    
+    def goalResponseFn(self, fut):
+        self.goal_handle: ClientGoalHandle = fut.result()
+        if self.goal_handle.accepted:
+            self.goal_handle.get_result_async().add_done_callback(self.goalResultFn)
+
+    def goalResultFn(self, fut):
+        result = fut.result().result
+        self.get_logger().info(f"Result = {result.success}")
 
 def main(args=None):
     rclpy.init(args=args) # Initialize
