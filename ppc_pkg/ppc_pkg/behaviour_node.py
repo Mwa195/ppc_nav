@@ -10,6 +10,9 @@ from nav_msgs.msg import Path
 from my_interfaces_pkg.msg import StartMissionMsg
 from my_interfaces_pkg.srv import CreatePlan
 from my_interfaces_pkg.action import Navigate
+from action_msgs.msg import GoalStatus
+from action_msgs.srv import CancelGoal
+import threading
 
 class behaviourNode(Node):
     def __init__(self):
@@ -29,7 +32,9 @@ class behaviourNode(Node):
         self.state = String()
         self.state.data = "idle"
         self.goal_handle = None
+        self._goal_lock = threading.Lock()  # Add a lock for thread safety
         self.get_logger().info("Behaviour Node Ready")
+        self.pub.publish(self.state) #
 
     # Execute whenever a new mission arrives
     def missionCallbackFn(self, mission:StartMissionMsg):
@@ -41,11 +46,24 @@ class behaviourNode(Node):
         if self.name == "Stop":
             self.state.data = "idle"
             self.pub.publish(self.state) # Change state to idle and publish
-            if self.goal_handle is not None:
-                self.goal_handle.cancel_goal_async()
-                self.get_logger().info("Navigation action canceled")
+            with self._goal_lock:
+                if self.goal_handle is not None:
+                    self.get_logger().info("Canceling current goal...")
+                    cancel_future = self.goal_handle.cancel_goal_async()
+                    cancel_future.add_done_callback(self.cancel_done_callback)
+                    self.get_logger().info("Navigation action canceled")
         elif self.name == "GoTo":
             self.gotoFn()
+    
+
+    def cancel_done_callback(self, future):
+        # cancel_response = future.result()
+        self.get_logger().info("Canceling Goal Callback")
+        # self.get_logger().info(cancel_response)
+        
+        # Clear the goal handle
+        with self._goal_lock:
+            self.goal_handle = None
 
     # Execute when GoTo mission is received
     def gotoFn(self):
@@ -104,7 +122,15 @@ class behaviourNode(Node):
 
     def goalResultFn(self, fut):
         result = fut.result().result
-        self.get_logger().info(f"Result = {result.success}")
+        status = fut.result().status
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().info(f"Goal succeeded! Result: {result.success}")
+        elif status == GoalStatus.STATUS_ABORTED:
+            self.get_logger().info("Goal was aborted/canceled")
+        self.state.data = "idle"
+        self.pub.publish(self.state) # Change state to idle and publish
+        with self._goal_lock:
+            self.goal_handle = None
 
 def main(args=None):
     rclpy.init(args=args) # Initialize
@@ -114,3 +140,6 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+
+
+
