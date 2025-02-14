@@ -53,8 +53,13 @@ class behaviourNode(Node):
                     cancel_future.add_done_callback(self.cancel_done_callback)
                     self.get_logger().info("Navigation action canceled")
         elif self.name == "GoTo":
+            with self._goal_lock:
+                if self.goal_handle is not None:
+                    self.get_logger().info("Aborting current goal for a new one")
+                    cancel_future = self.goal_handle.cancel_goal_async()
+                    cancel_future.add_done_callback(self.cancel_done_callback)
+                    self.get_logger().info("Old Goal canceled, Starting new one")
             self.gotoFn()
-    
 
     def cancel_done_callback(self, future):
         # cancel_response = future.result()

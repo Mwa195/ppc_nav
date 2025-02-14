@@ -37,11 +37,7 @@ class localPlannerNode(Node):
 
     def actionCallback(self, goal_handle: ServerGoalHandle):
         self.get_logger().info(f"Goal_accquired {goal_handle}")
-        if self.goal_handle is not None:
-            self.get_logger().info("Aborting Previous Goal")
-            self.goal_handle.abort()
-            self.goal_handle.destroy()
-            self.goal_handle = None
+        self.state = "None"
         self.goal_handle = goal_handle
         goal_path = self.goal_handle.request.path
         self.get_logger().info(f"Path accquired {goal_path}")
@@ -117,16 +113,18 @@ class localPlannerNode(Node):
         self.get_logger().info(f"OUTSIDEEE Remaining Distance: {goal_distance - self.distance_moved}")
         self.get_logger().info("Exited while 2")
 
-        if self.state == "Canceled":
-            self.goal_handle.abort()
-            self.goal_handle.destroy()
-            self.goal_handle = None
-            return Navigate.Result(success=False)
+        if self.goal_handle is not None:  # Check if goal_handle is valid
+            if self.state == "Canceled":
+                self.goal_handle.abort()
+                self.goal_handle = None  # Explicitly reset to None
+                return Navigate.Result(success=False)
+            else:
+                self.goal_handle.succeed()
+                self.goal_handle = None  # Explicitly reset to None
+                return Navigate.Result(success=True)
         else:
-            self.goal_handle.succeed()
-            self.goal_handle.destroy()
-            self.goal_handle = None
-            return Navigate.Result(success=True)
+            self.get_logger().warn("Goal handle is already destroyed or invalid.")
+            return Navigate.Result(success=False)
 
     def check_cancellation(self, goal_handle):
         self.get_logger().info("Goal canceled during execution")
