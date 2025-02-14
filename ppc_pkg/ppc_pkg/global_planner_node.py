@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+# Import necessary libs, msgs, services and actions
 import rclpy
 from rclpy.node import Node
 from my_interfaces_pkg.srv import CreatePlan
@@ -23,7 +24,7 @@ class globalPlannerNode(Node):
 
         # Start Pose:
         start_pose = Pose()
-        # Always start from origin (the Robot)
+        # Always start from origin (the Rover)
         start_pose.position.x = 0.0
         start_pose.position.y = 0.0
         start_pose.position.z = 0.0
@@ -48,10 +49,10 @@ class globalPlannerNode(Node):
         return response
 
 def main(args=None):
-    rclpy.init(args=args)
-    myNode = globalPlannerNode()
-    rclpy.spin(myNode)
-    rclpy.shutdown()
+    rclpy.init(args=args) # Initialize
+    myNode = globalPlannerNode() # Create Node
+    rclpy.spin(myNode) # Spin the Node
+    rclpy.shutdown() # Shutdown on exit
 
 if __name__ == "__main__":
     main()

@@ -11,7 +11,6 @@ from my_interfaces_pkg.msg import StartMissionMsg
 from my_interfaces_pkg.srv import CreatePlan
 from my_interfaces_pkg.action import Navigate
 from action_msgs.msg import GoalStatus
-from action_msgs.srv import CancelGoal
 import threading
 
 class behaviourNode(Node):
@@ -46,27 +45,30 @@ class behaviourNode(Node):
         if self.name == "Stop":
             self.state.data = "idle"
             self.pub.publish(self.state) # Change state to idle and publish
+            # Cancel current goal if it is still executing
             with self._goal_lock:
                 if self.goal_handle is not None:
                     self.get_logger().info("Canceling current goal...")
-                    cancel_future = self.goal_handle.cancel_goal_async()
-                    cancel_future.add_done_callback(self.cancel_done_callback)
+                    cancel_future = self.goal_handle.cancel_goal_async() # Send goal cancel request
+                    cancel_future.add_done_callback(self.cancel_done_callback) # Once done , execute cancel_done_callback
                     self.get_logger().info("Navigation action canceled")
+        
         elif self.name == "GoTo":
+            # Cancel current goal if it is still executing
             with self._goal_lock:
                 if self.goal_handle is not None:
                     self.get_logger().info("Aborting current goal for a new one")
-                    cancel_future = self.goal_handle.cancel_goal_async()
-                    cancel_future.add_done_callback(self.cancel_done_callback)
+                    cancel_future = self.goal_handle.cancel_goal_async() # Send goal cancel request
+                    cancel_future.add_done_callback(self.cancel_done_callback) # Once done , execute cancel_done_callback
                     self.get_logger().info("Old Goal canceled, Starting new one")
+            # Execute new goal
             self.gotoFn()
 
+    # Execute once current goal is canceled
     def cancel_done_callback(self, future):
-        # cancel_response = future.result()
         self.get_logger().info("Canceling Goal Callback")
-        # self.get_logger().info(cancel_response)
         
-        # Clear the goal handle
+        # Clear the goal handle for future use
         with self._goal_lock:
             self.goal_handle = None
 
@@ -75,7 +77,6 @@ class behaviourNode(Node):
         self.state.data = "create_path"
         self.pub.publish(self.state) # Change state to create_path and publish
         self.get_logger().info("Requesting a Path")
-
         # Wait for Server
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Service not available, waiting again...')
@@ -88,8 +89,9 @@ class behaviourNode(Node):
         requestPlanMsg.target_pose = self.target_pose
         self.future = self.client.call_async(requestPlanMsg)  # Request plan with received Pose
         self.get_logger().info("Sent request to /create_plan, waiting for response...")
-        self.timer = self.create_timer(0.1, self.timer_callback)  # Keep a reference to the timer
+        self.timer = self.create_timer(0.1, self.timer_callback)  # Check every 0.1 seconds
 
+    # Check if path plan is received
     def timer_callback(self):
         if self.future.done():
             try:
@@ -111,26 +113,30 @@ class behaviourNode(Node):
 
     # Navigation Action
     def send_goal(self):
+        # Request goal
         goal = Navigate.Goal()
         goal.path = self.response.path
         self.get_logger().info("Triggering Navigation Action")
         self.actionClient.send_goal_async(goal, feedback_callback= self.feedbackCallbackFn).add_done_callback(self.goalResponseFn)
 
     def feedbackCallbackFn(self, feedbackMsg):
+        # Accquire Feedback
         feedback = feedbackMsg.feedback.remaining_distance
         self.get_logger().warn(f"Feedback: {feedback}")
     
     def goalResponseFn(self, fut):
+        # Check if goal is accepted
         self.goal_handle: ClientGoalHandle = fut.result()
         if self.goal_handle.accepted:
             self.goal_handle.get_result_async().add_done_callback(self.goalResultFn)
 
     def goalResultFn(self, fut):
+        # Execute once goal is accepted and either finished or canceled
         result = fut.result().result
         status = fut.result().status
-        if status == GoalStatus.STATUS_SUCCEEDED:
+        if status == GoalStatus.STATUS_SUCCEEDED: # Goal Reached
             self.get_logger().info(f"Goal succeeded! Result: {result.success}")
-        elif status == GoalStatus.STATUS_ABORTED:
+        elif status == GoalStatus.STATUS_ABORTED: # Goal Canceled mid execution
             self.get_logger().info("Goal was aborted/canceled")
         self.state.data = "idle"
         self.pub.publish(self.state) # Change state to idle and publish
